@@ -47,3 +47,27 @@ $ bmsedit notes test.bms list --from-measure 8
 $ bmsedit defs test.bms rename wav 3F 07
 renamed wav 3F -> 07
 ```
+
+## 构建与测试
+
+```console
+cargo build --release
+cargo test
+```
+
+## 依赖与联调
+
+本仓通过 git `rev` 依赖 `bmsrs` facade。升级步骤：
+
+1. 修改 `Cargo.toml` 中的 `rev`
+2. 运行 `cargo update -p bmsrs`
+3. 运行 `cargo test`
+
+与本地 `bmsrs` 联调时，复制 `.cargo/config.toml.example` 为
+`.cargo/config.toml`，按实际路径调整 `[patch]`。该文件不提交。
+
+本仓只维护源码，不发布预编译二进制或 crates.io 包。
+
+## 许可
+
+Apache-2.0。
