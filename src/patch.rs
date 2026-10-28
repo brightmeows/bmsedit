@@ -1,16 +1,18 @@
 //! BMS 行级 patch 引擎。
 //!
-//! 以 `bms-document` 的字节保真 `Document` 为工作面：查询与后验
+//! 以 `bms-source` 的字节保真 `Document` 为工作面：查询与后验
 //! 验证走完整管线（token → 控制流展开 → `Bms`），写操作按
 //! 三档策略回写——行内替换、行插入/删除、兜底全量重写。
 //! 每次编辑提交后重新解析并运行后验检查，失败即报错且不落盘。
 
 use std::path::{Path, PathBuf};
 
-use bmsrs::bms::control_flow::FlowDoc;
-use bmsrs::bms::document::{Document, DocumentOptions, ErrorStrategy};
-use bmsrs::bms::parser::Bms;
-use bmsrs::bms::tokenizer::{BmsHeader, BmsMessage, BmsToken};
+use bmsrs::bms::parser::{
+    Bms, CstWarning, CstWarningKind, ErrorStrategy, LineToken, tokenize_lines,
+};
+use bmsrs::bms::source::{Document, DocumentOptions};
+use bmsrs::bms::syntax::SourceFile;
+use bmsrs::bms::values::{BmsHeader, BmsMessage, BmsToken};
 
 /// 提取头部命令名与值（总枚举分发到子枚举的 derive 格式化）。
 #[must_use]
@@ -26,6 +28,7 @@ pub fn header_name_value(header: &BmsHeader) -> (String, String) {
         BmsHeader::Fallback(h) => (h.command.clone(), h.value.clone()),
     }
 }
+use rand::RngExt as _;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
@@ -44,19 +47,8 @@ pub struct BmsDoc {
     pub warnings: Vec<String>,
     /// 分支选择种子。
     seed: u64,
-}
-
-/// 由行集合组装语义模型的公共路径。
-fn build_bms(document: &Document, seed: u64) -> Result<Bms, BmsEditError> {
-    let pairs: Vec<_> = document
-        .token_results_with(ErrorStrategy::CollectAll)
-        .filter_map(|(line, result)| result.ok().map(|token| (line, token)))
-        .collect();
-    let flow = FlowDoc::from_tokens(pairs)
-        .map_err(|err| BmsEditError::Parse(format!("control flow: {err}")))?;
-    let mut rng = StdRng::seed_from_u64(seed);
-    let flat = flow.select_branches(&mut rng).0;
-    Ok(Bms::from_flat_tokens(flat))
+    /// 每行的 typed token。
+    line_tokens: Vec<LineToken>,
 }
 
 impl BmsDoc {
@@ -67,21 +59,46 @@ impl BmsDoc {
     /// 控制流结构不合法时返回 [`BmsEditError::Parse`]。
     pub fn from_bytes(bytes: Vec<u8>, seed: u64) -> Result<Self, BmsEditError> {
         let document = Document::from_bytes_with(bytes, &DocumentOptions::default());
-        let mut warnings = Vec::new();
-        for (line, result) in document.token_results_with(ErrorStrategy::CollectAll) {
-            if let Err(err) = result {
-                warnings.push(format!("line {line}: skipped ({err})"));
-            }
-        }
-        let bms = build_bms(&document, seed)?;
-        for warn in flow_warnings(&document) {
-            warnings.push(warn);
-        }
+        let parse = SourceFile::parse_document(&document);
+        let line_tokens = tokenize_lines(&parse.source_file());
+        let mut rng = StdRng::seed_from_u64(seed);
+        let document_result = Bms::from_document(
+            &document,
+            |max| rng.random_range(1..=max),
+            ErrorStrategy::CollectAll,
+        );
+        let (bms, mut warnings) =
+            match document_result {
+                Ok(parsed_document) => (
+                    parsed_document.bms,
+                    parsed_document
+                        .warnings
+                        .iter()
+                        .map(format_warning)
+                        .collect::<Vec<_>>(),
+                ),
+                Err(warning) if matches!(warning.kind, CstWarningKind::Decode(_)) => {
+                    // 保留旧行为：坏编码行跳过，其余行继续构建。
+                    let mut fallback_rng = StdRng::seed_from_u64(seed);
+                    let fallback_parsed = Bms::from_cst(&parse.source_file(), |max| {
+                        fallback_rng.random_range(1..=max)
+                    });
+                    let mut warnings = vec![format_warning(&warning)];
+                    warnings.extend(line_token_warnings(&line_tokens));
+                    warnings.extend(parse.errors().iter().map(|error| {
+                        format!("syntax at {:?}: {}", error.range(), error.message())
+                    }));
+                    (fallback_parsed.bms, warnings)
+                }
+                Err(warning) => return Err(BmsEditError::Parse(format_warning(&warning))),
+            };
+        warnings.extend(branch_warnings(&line_tokens));
         Ok(Self {
             document,
             bms,
             warnings,
             seed,
+            line_tokens,
         })
     }
 
@@ -117,7 +134,28 @@ impl BmsDoc {
         self.document = rebuilt.document;
         self.bms = rebuilt.bms;
         self.warnings = rebuilt.warnings;
+        self.line_tokens = rebuilt.line_tokens;
         atomic_write(path, &bytes)
+    }
+
+    /// 返回每行的 typed token 视图。
+    #[must_use]
+    pub fn line_tokens(&self) -> &[LineToken] {
+        &self.line_tokens
+    }
+
+    /// 返回所有通道消息行及其 0-based 行号。
+    #[must_use]
+    pub fn all_message_lines(&self) -> Vec<(usize, BmsMessage)> {
+        self.line_tokens
+            .iter()
+            .filter_map(|entry| match &entry.token {
+                Ok(BmsToken::Message(msg)) => {
+                    Some((entry.line.get().saturating_sub(1), msg.clone()))
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// 定位一个通道组的全部行。
@@ -126,12 +164,10 @@ impl BmsDoc {
     #[must_use]
     pub fn message_lines(&self, measure: u16, channel: &str) -> Vec<(usize, BmsMessage)> {
         let target = channel.to_ascii_uppercase();
-        self.document
-            .lines()
+        self.line_tokens
             .iter()
-            .enumerate()
-            .filter_map(|(index, line)| match line.kind() {
-                bmsrs::bms::document::LineKind::Message(msg) => Some((index, msg)),
+            .filter_map(|entry| match &entry.token {
+                Ok(BmsToken::Message(msg)) => Some((entry.line.get().saturating_sub(1), msg)),
                 _ => None,
             })
             .filter(|(_, msg)| msg.track() == measure && msg.channel().as_str() == target)
@@ -154,7 +190,7 @@ impl BmsDoc {
         resolution: usize,
         slots: &[(usize, String)],
     ) -> Result<(), BmsEditError> {
-        let body = bmsrs::bms::tokenizer::BmsMessage::encode_body((0..resolution).map(|i| {
+        let body = BmsMessage::encode_body((0..resolution).map(|i| {
             slots
                 .iter()
                 .find(|(slot, _)| *slot == i)
@@ -216,19 +252,21 @@ impl BmsDoc {
     pub fn write_header_line(&mut self, command: &str, value: &str) -> Result<(), BmsEditError> {
         let target = command.to_ascii_uppercase();
         let mut header_line = None;
-        for (index, line) in self.document.lines().iter().enumerate() {
-            if let bmsrs::bms::document::LineKind::Header(header) = line.kind() {
-                let (header_command, _) = header_name_value(header);
-                let normalized = header_command
-                    .trim_start_matches(['#', '%'])
-                    .to_ascii_uppercase();
-                if normalized == target {
-                    header_line = Some(index);
-                    break;
-                }
-                if header_line.is_none() {
-                    header_line = Some(index);
-                }
+        for entry in &self.line_tokens {
+            let Ok(BmsToken::Header(header)) = &entry.token else {
+                continue;
+            };
+            let index = entry.line.get().saturating_sub(1);
+            let (header_command, _) = header_name_value(header);
+            let normalized = header_command
+                .trim_start_matches(['#', '%'])
+                .to_ascii_uppercase();
+            if normalized == target {
+                header_line = Some(index);
+                break;
+            }
+            if header_line.is_none() {
+                header_line = Some(index);
             }
         }
         let text = format!("#{command} {value}");
@@ -255,16 +293,17 @@ impl BmsDoc {
     pub fn remove_header_line(&mut self, command: &str) -> Result<(), BmsEditError> {
         let target = command.to_ascii_uppercase();
         let mut found = None;
-        for (index, line) in self.document.lines().iter().enumerate() {
-            if let bmsrs::bms::document::LineKind::Header(header) = line.kind() {
-                let (header_command, _) = header_name_value(header);
-                let normalized = header_command
-                    .trim_start_matches(['#', '%'])
-                    .to_ascii_uppercase();
-                if normalized == target {
-                    found = Some(index);
-                    break;
-                }
+        for entry in &self.line_tokens {
+            let Ok(BmsToken::Header(header)) = &entry.token else {
+                continue;
+            };
+            let (header_command, _) = header_name_value(header);
+            let normalized = header_command
+                .trim_start_matches(['#', '%'])
+                .to_ascii_uppercase();
+            if normalized == target {
+                found = Some(entry.line.get().saturating_sub(1));
+                break;
             }
         }
         if let Some(index) = found {
@@ -286,14 +325,14 @@ impl BmsDoc {
         let target = channel.to_ascii_uppercase();
         let mut position = self.document.lines().len();
         let mut anchored = false;
-        for (index, line) in self.document.lines().iter().enumerate() {
-            let bmsrs::bms::document::LineKind::Message(msg) = line.kind() else {
+        for entry in &self.line_tokens {
+            let Ok(BmsToken::Message(msg)) = &entry.token else {
                 continue;
             };
             let msg_channel = msg.channel().as_str().to_string();
             let before = (msg.track(), msg_channel.as_str()) < (measure, target.as_str());
             if !before && !anchored {
-                position = index;
+                position = entry.line.get().saturating_sub(1);
                 anchored = true;
             }
         }
@@ -433,17 +472,38 @@ fn line_text(measure: u16, channel: &str, body: &str) -> String {
     format!("#{measure:03}{}:{body}", channel.to_ascii_uppercase())
 }
 
-/// 扫描文档中的控制流命令，产出警告。
-fn flow_warnings(document: &Document) -> Vec<String> {
-    let mut warnings = Vec::new();
-    for (line, token) in document.tokens() {
-        if let BmsToken::Header(bmsrs::bms::tokenizer::BmsHeader::ControlFlow(_)) = token {
-            warnings.push(format!(
-                "line {line}: branch structure (#RANDOM/#SWITCH) present; \
-                 editing operates on the selected branch only"
-            ));
-        }
+/// 扫描 typed token 中的控制流命令，产出一次提示。
+fn branch_warnings(tokens: &[LineToken]) -> Vec<String> {
+    tokens
+        .iter()
+        .any(|entry| matches!(&entry.token, Ok(BmsToken::Header(BmsHeader::ControlFlow(_)))))
+        .then(|| {
+            "branch structure (#RANDOM/#SWITCH) present; editing operates on the selected branch only"
+                .to_owned()
+        })
+        .into_iter()
+        .collect()
+}
+
+/// 收集逐行 token 错误。
+fn line_token_warnings(tokens: &[LineToken]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .token
+                .as_ref()
+                .err()
+                .map(|error| format!("line {}: skipped ({error})", entry.line))
+        })
+        .collect()
+}
+
+/// 格式化解析警告。
+fn format_warning(warning: &CstWarning) -> String {
+    match &warning.kind {
+        CstWarningKind::Tokenize(error) => format!("line {}: skipped ({error})", warning.line),
+        CstWarningKind::Decode(error) => format!("line {}: {error}", warning.line),
+        CstWarningKind::Syntax(message) => format!("line {}: {message}", warning.line),
     }
-    warnings.dedup();
-    warnings
 }
