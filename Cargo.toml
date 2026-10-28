@@ -18,7 +18,7 @@ name = "bmsedit"
 path = "src/main.rs"
 
 [dependencies]
-bmsrs = { git = "https://github.com/brightmeows/bmsrs", rev = "8fc72d0a6b15042bcd01a99ca5a579c6e9c03517" }
+bmsrs = { git = "https://github.com/brightmeows/bmsrs", rev = "be61ed8022a6496d9130a71db033f89ca686d922" }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 rand = { version = "0.10", default-features = false, features = ["std", "std_rng"] }

@@ -80,35 +80,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
-name = "bms-control-flow"
+name = "bms-analysis"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
- "bms-tokenizer",
- "itertools",
- "rand",
- "thiserror",
-]
-
-[[package]]
-name = "bms-document"
-version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
-dependencies = [
- "bms-control-flow",
- "bms-tokenizer",
- "encoding_rs",
- "itertools",
- "thiserror",
+ "bms-syntax",
+ "bms-values",
 ]
 
 [[package]]
 name = "bms-parser"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
- "bms-control-flow",
- "bms-tokenizer",
+ "bms-source",
+ "bms-syntax",
+ "bms-values",
  "bmsrs-chart",
  "thiserror",
 ]
@@ -116,29 +103,46 @@ dependencies = [
 [[package]]
 name = "bms-processor"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "bms-parser",
- "bms-tokenizer",
  "bmsrs-chart",
  "thiserror",
 ]
 
 [[package]]
-name = "bms-tokenizer"
+name = "bms-source"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
- "bms-tokenizer-derive",
- "derive_more",
- "itertools",
+ "encoding_rs",
  "thiserror",
 ]
 
 [[package]]
-name = "bms-tokenizer-derive"
+name = "bms-syntax"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
+dependencies = [
+ "bms-source",
+ "rowan",
+ "thiserror",
+]
+
+[[package]]
+name = "bms-values"
+version = "0.1.0"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
+dependencies = [
+ "bms-values-derive",
+ "derive_more",
+ "thiserror",
+]
+
+[[package]]
+name = "bms-values-derive"
+version = "0.1.0"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -148,10 +152,9 @@ dependencies = [
 [[package]]
 name = "bms-writer"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "bms-parser",
- "bms-tokenizer",
 ]
 
 [[package]]
@@ -169,7 +172,7 @@ dependencies = [
 [[package]]
 name = "bmson-def"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "derive_more",
  "serde",
@@ -180,7 +183,7 @@ dependencies = [
 [[package]]
 name = "bmson-processor"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "bmson-def",
  "bmsrs-chart",
@@ -190,13 +193,14 @@ dependencies = [
 [[package]]
 name = "bmsrs"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
- "bms-control-flow",
- "bms-document",
+ "bms-analysis",
  "bms-parser",
  "bms-processor",
- "bms-tokenizer",
+ "bms-source",
+ "bms-syntax",
+ "bms-values",
  "bms-writer",
  "bmson-def",
  "bmson-processor",
@@ -208,12 +212,12 @@ dependencies = [
 [[package]]
 name = "bmsrs-chart"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 
 [[package]]
 name = "bmsrs-player"
 version = "0.1.0"
-source = "git+https://github.com/brightmeows/bmsrs?rev=8fc72d0a6b15042bcd01a99ca5a579c6e9c03517#8fc72d0a6b15042bcd01a99ca5a579c6e9c03517"
+source = "git+https://github.com/brightmeows/bmsrs?rev=be61ed8022a6496d9130a71db033f89ca686d922#be61ed8022a6496d9130a71db033f89ca686d922"
 dependencies = [
  "bmsrs-chart",
 ]
@@ -340,6 +344,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
+name = "countme"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -452,12 +462,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
-name = "either"
-version = "1.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
-
-[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -523,6 +527,12 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hashbrown"
@@ -600,15 +610,6 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
-
-[[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itoa"
@@ -698,6 +699,15 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "multiversion_no_op"
@@ -819,6 +829,25 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "rowan"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14b574c58582fa59fa43a2feb6608b8744184659f08a2e0117e4b8224d95ed61"
+dependencies = [
+ "countme",
+ "hashbrown 0.14.5",
+ "memoffset",
+ "rustc-hash",
+ "text-size",
+]
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc_version"
@@ -992,6 +1021,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "text-size"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "thiserror"

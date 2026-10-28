@@ -10,7 +10,7 @@ use std::path::Path;
 use std::str::FromStr as _;
 
 use bmsrs::bms::parser::Bms;
-use bmsrs::bms::tokenizer::BmsChannel;
+use bmsrs::bms::values::{BmsChannel, BmsToken};
 use serde::Serialize;
 
 use crate::cli::{self, Spot};
@@ -223,8 +223,8 @@ pub fn header_get(
 ) -> Result<(), BmsEditError> {
     let doc = load(file, seed)?;
     let mut pairs: Vec<(String, String)> = Vec::new();
-    for line in doc.document.lines() {
-        if let bmsrs::bms::document::LineKind::Header(header) = line.kind() {
+    for entry in doc.line_tokens() {
+        if let Ok(BmsToken::Header(header)) = &entry.token {
             let (name, value) = header_name_value(header);
             pairs.push((name.trim_start_matches(['#', '%']).to_owned(), value));
         }
@@ -513,12 +513,12 @@ fn normalize_def(def: &str) -> String {
 fn parse_note_channel(channel: &str) -> BmsChannel {
     lane_map::parse_channel(channel)
         .or_else(|| {
-            bmsrs::bms::tokenizer::ChannelIndex::from_str(channel)
+            bmsrs::bms::values::ChannelIndex::from_str(channel)
                 .ok()
                 .map(BmsChannel::Unknown)
         })
         .unwrap_or_else(|| {
-            BmsChannel::Unknown(bmsrs::bms::tokenizer::ChannelIndex::from_valid(*b"ZZ"))
+            BmsChannel::Unknown(bmsrs::bms::values::ChannelIndex::from_valid(*b"ZZ"))
         })
 }
 
@@ -1196,27 +1196,20 @@ fn check_kind(kind: &str) -> Result<(), BmsEditError> {
 }
 
 /// 构造 WAV 定义索引。
-fn wav_index(id: &str) -> Result<bmsrs::bms::tokenizer::WavIndex, BmsEditError> {
-    bmsrs::bms::tokenizer::WavIndex::from_str(id)
+fn wav_index(id: &str) -> Result<bmsrs::bms::values::WavIndex, BmsEditError> {
+    bmsrs::bms::values::WavIndex::from_str(id)
         .map_err(|_err| BmsEditError::Usage(format!("invalid def id `{id}`")))
 }
 
 /// 构造 BMP 定义索引。
-fn bmp_index(id: &str) -> Result<bmsrs::bms::tokenizer::BmpIndex, BmsEditError> {
-    bmsrs::bms::tokenizer::BmpIndex::from_str(id)
+fn bmp_index(id: &str) -> Result<bmsrs::bms::values::BmpIndex, BmsEditError> {
+    bmsrs::bms::values::BmpIndex::from_str(id)
         .map_err(|_err| BmsEditError::Usage(format!("invalid def id `{id}`")))
 }
 
 /// 全文件替换通道行中的 2 字符值（大小写不敏感匹配）。
 fn replace_value_everywhere(doc: &mut BmsDoc, from: &str, to: &str) -> Result<(), BmsEditError> {
-    let line_count = doc.document.lines().len();
-    for index in 0..line_count {
-        let Some(line) = doc.document.lines().get(index) else {
-            continue;
-        };
-        let bmsrs::bms::document::LineKind::Message(msg) = line.kind() else {
-            continue;
-        };
+    for (index, msg) in doc.all_message_lines() {
         let body = msg.body.clone();
         let denom = body.chars().count() / 2;
         if denom == 0 {
@@ -1708,16 +1701,8 @@ pub fn transform_sparsify(
         return Err(BmsEditError::Usage("grid must be positive".to_owned()));
     }
     let mut doc = load(file, seed)?;
-    let line_count = doc.document.lines().len();
     let mut removed = 0usize;
-    for index in 0..line_count {
-        let Some(line) = doc.document.lines().get(index) else {
-            continue;
-        };
-        let msg = match line.kind() {
-            bmsrs::bms::document::LineKind::Message(msg) => msg.clone(),
-            _ => continue,
-        };
+    for (index, msg) in doc.all_message_lines() {
         // 仅处理可玩音符通道；BGM 与控制通道保留。
         if !matches!(msg.channel(), BmsChannel::Note(_)) {
             continue;
