@@ -1752,10 +1752,11 @@ pub fn transform_sparsify(
 /// 文件读取、解析或编辑验证失败时返回 [`BmsEditError`]。
 pub fn validate(file: &Path, seed: u64, out: &mut Output) -> Result<(), BmsEditError> {
     let doc = load(file, seed)?;
-    let (chart, process_warnings) = bmsrs::bms::processor::BmsProcessor::process_with_warnings::<
+    let processed = bmsrs::bms::processor::BmsProcessor::process::<
         bmsrs::bms::processor::layout::Bme,
     >(&doc.bms)
     .map_err(|err| BmsEditError::Parse(format!("process: {err}")))?;
+    let (chart, process_warnings) = (processed.chart, processed.warnings);
     let warnings: Vec<String> = process_warnings.iter().map(ToString::to_string).collect();
     match chart.validate() {
         Ok(()) => {
