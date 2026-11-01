@@ -11,6 +11,7 @@ cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test --quiet
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+cargo deny check
 pre-commit run --all-files
 ```
 
@@ -27,6 +28,8 @@ pre-commit run --all-files
 
 ## 约定
 
+- Git worktree 统一放在 `.worktrees/` 目录下（已 gitignore）。
+- main 分支受远端 ruleset 保护：改动从 main 建分支推送并开 PR，CI 通过后合并。
 - 只通过 `bmsrs` facade 使用库 API，不直连子 crate。
 - `[lints]`、`clippy.toml`、`.pre-commit-config.yaml` 复制自 `bmsrs`；
   `bmsrs` 调整时同步更新。
