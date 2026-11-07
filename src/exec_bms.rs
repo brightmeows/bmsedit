@@ -9,8 +9,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr as _;
 
-use bmsrs::bms::parser::Bms;
-use bmsrs::bms::values::{BmsChannel, BmsToken};
+use bmsrs::raw::model::Bms;
+use bmsrs::raw::model::MessagesBuilder;
+use bmsrs::raw::values::{BmsBase, BmsChannel, BmsMessage, BmsToken};
 use serde::Serialize;
 
 use crate::cli::{self, Spot};
@@ -185,7 +186,7 @@ pub fn info(file: &Path, seed: u64, out: &mut Output) -> Result<(), BmsEditError
         bgm_notes: bms.messages.bgm_events.len(),
         long_notes: bms.messages.long_note_events.len(),
         mines: bms.messages.mine_events.len(),
-        measures: bms.messages.raw.keys().next_back().copied().unwrap_or(0) + 1,
+        measures: bms.messages.raw().keys().next_back().copied().unwrap_or(0) + 1,
         wav_defs: bms.audio.wav_files.len(),
         bmp_defs: bms.visual.bmp_files.len(),
     };
@@ -382,7 +383,7 @@ pub fn notes_list(
 /// 追加一条音符输出（lane 还原失败时跳过）。
 fn push_note_out(
     notes: &mut Vec<NoteOut>,
-    position: bmsrs::bms::parser::Position,
+    position: bmsrs::raw::model::Position,
     player: u8,
     lane_byte: u8,
     def: &str,
@@ -513,12 +514,12 @@ fn normalize_def(def: &str) -> String {
 fn parse_note_channel(channel: &str) -> BmsChannel {
     lane_map::parse_channel(channel)
         .or_else(|| {
-            bmsrs::bms::values::ChannelIndex::from_str(channel)
+            bmsrs::raw::values::ChannelIndex::from_str(channel)
                 .ok()
                 .map(BmsChannel::Unknown)
         })
         .unwrap_or_else(|| {
-            BmsChannel::Unknown(bmsrs::bms::values::ChannelIndex::from_valid(*b"ZZ"))
+            BmsChannel::Unknown(bmsrs::raw::values::ChannelIndex::from_valid(*b"ZZ"))
         })
 }
 
@@ -530,7 +531,7 @@ fn verify_slot(
     pos: (u32, u32),
     def: &str,
 ) -> Result<(), String> {
-    let measure_channels = bms.messages.raw.get(&measure);
+    let measure_channels = bms.messages.raw().get(&measure);
     let found = measure_channels.is_some_and(|channels| {
         channels.iter().any(|(ch, bodies)| {
             ch.as_str() == channel
@@ -695,7 +696,7 @@ pub fn notes_copy(
     let source_keys: Vec<(u16, String)> = doc
         .bms
         .messages
-        .raw
+        .raw()
         .range(from_measure..=to_measure)
         .flat_map(|(measure, channels)| {
             channels
@@ -749,7 +750,7 @@ pub fn timing_list(file: &Path, seed: u64, out: &mut Output) -> Result<(), BmsEd
     let doc = load(file, seed)?;
     let bms = &doc.bms;
     let mut rows: Vec<TimingOut> = Vec::new();
-    for (measure, channels) in &bms.messages.raw {
+    for (measure, channels) in bms.messages.raw() {
         for (channel, bodies) in channels {
             let name = channel.as_str().to_string();
             if matches!(name.as_str(), "02" | "03" | "08" | "09" | "SC" | "SP") {
@@ -1111,7 +1112,7 @@ pub fn defs_list(file: &Path, seed: u64, kind: &str, out: &mut Output) -> Result
 /// 扫描全部通道行，统计 2 字符值引用计数。
 fn reference_counts(doc: &BmsDoc) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
-    for channels in doc.bms.messages.raw.values() {
+    for channels in doc.bms.messages.raw().values() {
         for bodies in channels.values() {
             for body in bodies {
                 for value in patch::chunk_values(body) {
@@ -1196,14 +1197,14 @@ fn check_kind(kind: &str) -> Result<(), BmsEditError> {
 }
 
 /// 构造 WAV 定义索引。
-fn wav_index(id: &str) -> Result<bmsrs::bms::values::WavIndex, BmsEditError> {
-    bmsrs::bms::values::WavIndex::from_str(id)
+fn wav_index(id: &str) -> Result<bmsrs::raw::values::WavIndex, BmsEditError> {
+    bmsrs::raw::values::WavIndex::from_str(id)
         .map_err(|_err| BmsEditError::Usage(format!("invalid def id `{id}`")))
 }
 
 /// 构造 BMP 定义索引。
-fn bmp_index(id: &str) -> Result<bmsrs::bms::values::BmpIndex, BmsEditError> {
-    bmsrs::bms::values::BmpIndex::from_str(id)
+fn bmp_index(id: &str) -> Result<bmsrs::raw::values::BmpIndex, BmsEditError> {
+    bmsrs::raw::values::BmpIndex::from_str(id)
         .map_err(|_err| BmsEditError::Usage(format!("invalid def id `{id}`")))
 }
 
@@ -1352,7 +1353,8 @@ fn defs_compact_via_rewrite(
 ) -> Result<(), BmsEditError> {
     let doc = load(file, seed)?;
     let mut bms = doc.bms.clone();
-    for channels in bms.messages.raw.values_mut() {
+    let mut raw = bms.messages.raw().clone();
+    for channels in raw.values_mut() {
         for bodies in channels.values_mut() {
             for body in bodies.iter_mut() {
                 let denom = body.chars().count() / 2;
@@ -1371,6 +1373,7 @@ fn defs_compact_via_rewrite(
             }
         }
     }
+    rebuild_raw(&mut bms, &raw)?;
     let rename_map: BTreeMap<String, String> = remap.iter().cloned().collect();
     if kind == "wav" {
         let old = bms.audio.wav_files.clone();
@@ -1393,7 +1396,7 @@ fn defs_compact_via_rewrite(
             bms.visual.bmp_files.insert(bmp_index(&new_id)?, name);
         }
     }
-    let text = bmsrs::bms::writer::BmsWriter::write(&bms);
+    let text = bmsrs::raw::writer::BmsWriter::write(&bms);
     let rebuilt = BmsDoc::from_bytes(text.clone().into_bytes(), seed)?;
     let before_count = if kind == "wav" {
         doc.bms.audio.wav_files.len()
@@ -1448,10 +1451,10 @@ pub fn measure_insert(
     }
     let doc = load(file, seed)?;
     let mut bms = doc.bms;
-    shift_measures(&mut bms, at, i32::from(count));
-    let text = bmsrs::bms::writer::BmsWriter::write(&bms);
+    shift_measures(&mut bms, at, i32::from(count))?;
+    let text = bmsrs::raw::writer::BmsWriter::write(&bms);
     let rebuilt = BmsDoc::from_bytes(text.into_bytes(), seed)?;
-    let out_text = bmsrs::bms::writer::BmsWriter::write(&rebuilt.bms);
+    let out_text = bmsrs::raw::writer::BmsWriter::write(&rebuilt.bms);
     atomic_write_text(file, &out_text)?;
     out.result(
         format!("inserted {count} measure(s) before {at}"),
@@ -1479,19 +1482,19 @@ pub fn measure_remove(
     let doc = load(file, seed)?;
     let mut bms = doc.bms;
     // 先删除区间，再对后续小节左移。
-    let removed_keys: Vec<u16> = bms
-        .messages
-        .raw
+    let mut raw = bms.messages.raw().clone();
+    let removed_keys: Vec<u16> = raw
         .range(at..at.saturating_add(count))
         .map(|(k, _)| *k)
         .collect();
     for key in removed_keys {
-        bms.messages.raw.remove(&key);
+        raw.remove(&key);
     }
-    shift_measures(&mut bms, at.saturating_add(count), -i32::from(count));
-    let text = bmsrs::bms::writer::BmsWriter::write(&bms);
+    rebuild_raw(&mut bms, &raw)?;
+    shift_measures(&mut bms, at.saturating_add(count), -i32::from(count))?;
+    let text = bmsrs::raw::writer::BmsWriter::write(&bms);
     let rebuilt = BmsDoc::from_bytes(text.into_bytes(), seed)?;
-    let out_text = bmsrs::bms::writer::BmsWriter::write(&rebuilt.bms);
+    let out_text = bmsrs::raw::writer::BmsWriter::write(&rebuilt.bms);
     atomic_write_text(file, &out_text)?;
     out.result(
         format!("removed {count} measure(s) from {at}"),
@@ -1517,7 +1520,7 @@ pub fn measure_clone(
     let source: Vec<(BmsChannel, SlotMap)> = doc
         .bms
         .messages
-        .raw
+        .raw()
         .get(&from)
         .map(|channels| {
             channels
@@ -1554,23 +1557,21 @@ pub fn measure_clone(
 }
 
 /// 位移全部小节数据（`delta` 可负）；STP 同步位移。
-fn shift_measures(bms: &mut Bms, from: u16, delta: i32) {
-    let moved: Vec<(u16, BTreeMap<BmsChannel, Vec<String>>)> = bms
-        .messages
-        .raw
-        .range(from..)
-        .map(|(k, v)| (*k, v.clone()))
-        .collect();
+fn shift_measures(bms: &mut Bms, from: u16, delta: i32) -> Result<(), BmsEditError> {
+    let mut raw = bms.messages.raw().clone();
+    let moved: Vec<(u16, BTreeMap<BmsChannel, Vec<String>>)> =
+        raw.range(from..).map(|(k, v)| (*k, v.clone())).collect();
     for (key, value) in moved {
-        bms.messages.raw.remove(&key);
+        raw.remove(&key);
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "measure numbers are within u16 range after clamping"
         )]
         let new_key = (i32::from(key) + delta).max(0) as u16;
-        bms.messages.raw.insert(new_key, value);
+        raw.insert(new_key, value);
     }
+    rebuild_raw(bms, &raw)?;
     for event in &mut bms.messages.stp_events {
         let measure = event.position.measure();
         if measure >= from {
@@ -1580,13 +1581,46 @@ fn shift_measures(bms: &mut Bms, from: u16, delta: i32) {
                 reason = "measure numbers are within u16 range after clamping"
             )]
             let new_measure = (i32::from(measure) + delta).max(0) as u16;
-            event.position = bmsrs::bms::parser::Position::new(
+            event.position = bmsrs::raw::model::Position::new(
                 new_measure,
                 event.position.numer(),
                 event.position.denom(),
             );
         }
     }
+    Ok(())
+}
+
+/// 0.0.1 起 `Messages` 字段只读：修改须落在 raw 副本上，再经 builder 重建。
+///
+/// # Errors
+///
+/// 通道名无法组成合法消息地址时返回 [`BmsEditError::Parse`]。
+fn rebuild_raw(
+    bms: &mut Bms,
+    raw: &BTreeMap<u16, BTreeMap<BmsChannel, Vec<String>>>,
+) -> Result<(), BmsEditError> {
+    let base = bms.gameplay.base.unwrap_or(BmsBase::Base36);
+    let mut builder = MessagesBuilder::new();
+    for (measure, channels) in raw {
+        for (channel, bodies) in channels {
+            for body in bodies {
+                let message =
+                    BmsMessage::compose(*measure, channel.as_str().as_ref(), body.clone())
+                        .map_err(|error| {
+                            BmsEditError::Parse(format!(
+                                "measure {measure} channel {channel}: {error}"
+                            ))
+                        })?;
+                builder.push_message(&message);
+            }
+        }
+    }
+    for event in &bms.messages.stp_events {
+        builder.push_stp(event.clone());
+    }
+    bms.messages = builder.finish(base);
+    Ok(())
 }
 
 /// `transform mirror` 命令。
@@ -1613,7 +1647,7 @@ pub fn transform_mirror(file: &Path, seed: u64, out: &mut Output) -> Result<(), 
     let channels: Vec<BmsChannel> = doc
         .bms
         .messages
-        .raw
+        .raw()
         .values()
         .flat_map(|c| c.keys().copied())
         .collect();
@@ -1635,12 +1669,14 @@ pub fn transform_mirror(file: &Path, seed: u64, out: &mut Output) -> Result<(), 
     swaps.retain(|(a, b)| a != b);
     swaps.sort();
     swaps.dedup();
+    let mut raw = bms.messages.raw().clone();
     for (a, b) in &swaps {
-        swap_channels(&mut bms, *a, *b);
+        swap_raw_channels(&mut raw, *a, *b);
     }
-    let text = bmsrs::bms::writer::BmsWriter::write(&bms);
+    rebuild_raw(&mut bms, &raw)?;
+    let text = bmsrs::raw::writer::BmsWriter::write(&bms);
     let rebuilt = BmsDoc::from_bytes(text.into_bytes(), seed)?;
-    let out_text = bmsrs::bms::writer::BmsWriter::write(&rebuilt.bms);
+    let out_text = bmsrs::raw::writer::BmsWriter::write(&rebuilt.bms);
     atomic_write_text(file, &out_text)?;
     out.result(
         format!(
@@ -1662,10 +1698,14 @@ const fn mirror_lane_of(lane: LaneRef, keys_max: u8) -> LaneRef {
 }
 
 /// 交换两个通道的数据。
-fn swap_channels(bms: &mut Bms, a: BmsChannel, b: BmsChannel) {
-    let measures: Vec<u16> = bms.messages.raw.keys().copied().collect();
+fn swap_raw_channels(
+    raw: &mut BTreeMap<u16, BTreeMap<BmsChannel, Vec<String>>>,
+    a: BmsChannel,
+    b: BmsChannel,
+) {
+    let measures: Vec<u16> = raw.keys().copied().collect();
     for measure in measures {
-        let Some(channels) = bms.messages.raw.get_mut(&measure) else {
+        let Some(channels) = raw.get_mut(&measure) else {
             continue;
         };
         let a_body = channels.remove(&a);
@@ -1752,20 +1792,16 @@ pub fn transform_sparsify(
 /// 文件读取、解析或编辑验证失败时返回 [`BmsEditError`]。
 pub fn validate(file: &Path, seed: u64, out: &mut Output) -> Result<(), BmsEditError> {
     let doc = load(file, seed)?;
-    let processed = bmsrs::bms::processor::BmsProcessor::process::<
-        bmsrs::bms::processor::layout::Bme,
+    let processed = bmsrs::raw::processor::BmsProcessor::process::<
+        bmsrs::raw::processor::layout::Bme,
     >(&doc.bms)
     .map_err(|err| BmsEditError::Parse(format!("process: {err}")))?;
-    let (chart, process_warnings) = (processed.chart, processed.warnings);
-    let warnings: Vec<String> = process_warnings.iter().map(ToString::to_string).collect();
-    match chart.validate() {
-        Ok(()) => {
-            let human = format!("valid ({} warning(s))", warnings.len());
-            out.result(human, &serde_json::json!({ "valid": true }), &warnings);
-            Ok(())
-        }
-        Err(err) => Err(BmsEditError::Verify(err.to_string())),
-    }
+    // 0.0.1 起事件排序与引用完整性检查移入 `ChartData::new` 构造期，
+    // `process` 成功即代表校验通过，无需单独的 validate 调用。
+    let warnings: Vec<String> = processed.warnings.iter().map(ToString::to_string).collect();
+    let human = format!("valid ({} warning(s))", warnings.len());
+    out.result(human, &serde_json::json!({ "valid": true }), &warnings);
+    Ok(())
 }
 
 /// `lint` 命令。
@@ -1795,7 +1831,7 @@ pub fn lint(file: &Path, seed: u64, out: &mut Output) -> Result<(), BmsEditError
         }
     }
     // LN 通道奇数非 00 值（LNTYPE 1 未配对）。
-    for (measure, channels) in &bms.messages.raw {
+    for (measure, channels) in bms.messages.raw() {
         for (channel, bodies) in channels {
             let name = channel.as_str();
             if name.starts_with('5') || name.starts_with('6') {
