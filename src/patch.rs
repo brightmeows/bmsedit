@@ -7,12 +7,13 @@
 
 use std::path::{Path, PathBuf};
 
-use bmsrs::bms::parser::{
-    Bms, CstWarning, CstWarningKind, ErrorStrategy, LineToken, tokenize_lines,
+use bmsrs::raw::model::Bms;
+use bmsrs::raw::parser::{
+    BmsParseWarning, BmsParseWarningKind, BmsParser, ErrorStrategy, LineToken, tokenize_lines,
 };
-use bmsrs::bms::source::{Document, DocumentOptions};
-use bmsrs::bms::syntax::SourceFile;
-use bmsrs::bms::values::{BmsHeader, BmsMessage, BmsToken};
+use bmsrs::raw::source::{Document, DocumentOptions};
+use bmsrs::raw::syntax::SourceFile;
+use bmsrs::raw::values::{BmsHeader, BmsMessage, BmsToken};
 
 /// 提取头部命令名与值（总枚举分发到子枚举的 derive 格式化）。
 #[must_use]
@@ -62,7 +63,7 @@ impl BmsDoc {
         let parse = SourceFile::parse_document(&document);
         let line_tokens = tokenize_lines(&parse.source_file());
         let mut rng = StdRng::seed_from_u64(seed);
-        let document_result = Bms::from_document(
+        let document_result = BmsParser::parse_document(
             &document,
             |max| rng.random_range(1..=max),
             ErrorStrategy::CollectAll,
@@ -77,10 +78,10 @@ impl BmsDoc {
                         .map(format_warning)
                         .collect::<Vec<_>>(),
                 ),
-                Err(warning) if matches!(warning.kind, CstWarningKind::Decode(_)) => {
+                Err(warning) if matches!(warning.kind, BmsParseWarningKind::Decode(_)) => {
                     // 保留旧行为：坏编码行跳过，其余行继续构建。
                     let mut fallback_rng = StdRng::seed_from_u64(seed);
-                    let fallback_parsed = Bms::from_cst(&parse.source_file(), |max| {
+                    let fallback_parsed = BmsParser::parse(&parse.source_file(), |max| {
                         fallback_rng.random_range(1..=max)
                     });
                     let mut warnings = vec![format_warning(&warning)];
@@ -500,10 +501,10 @@ fn line_token_warnings(tokens: &[LineToken]) -> Vec<String> {
 }
 
 /// 格式化解析警告。
-fn format_warning(warning: &CstWarning) -> String {
+fn format_warning(warning: &BmsParseWarning) -> String {
     match &warning.kind {
-        CstWarningKind::Tokenize(error) => format!("line {}: skipped ({error})", warning.line),
-        CstWarningKind::Decode(error) => format!("line {}: {error}", warning.line),
-        CstWarningKind::Syntax(message) => format!("line {}: {message}", warning.line),
+        BmsParseWarningKind::Tokenize(error) => format!("line {}: skipped ({error})", warning.line),
+        BmsParseWarningKind::Decode(error) => format!("line {}: {error}", warning.line),
+        BmsParseWarningKind::Syntax(message) => format!("line {}: {message}", warning.line),
     }
 }

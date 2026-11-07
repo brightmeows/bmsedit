@@ -1,6 +1,6 @@
 //! bmson 后端命令执行。
 //!
-//! bmson 是 JSON 格式：编辑落在 `bmsrs::bmson::def::Bmson`（v2 root schema）
+//! bmson 是 JSON 格式：编辑落在 `bmsrs::raw::bmson_model::Bmson`（v2 root schema）
 //! 的结构体字段上，写回经 serde 全量序列化；v0/v1 文件升版为 v2。
 //!
 //! # 借用模型
@@ -13,8 +13,8 @@
 
 use std::path::Path;
 
-use bmsrs::bmson::def::SoundChannel;
-use bmsrs::bmson::def::{Bmson, NoteEvent};
+use bmsrs::raw::bmson_model::SoundChannel;
+use bmsrs::raw::bmson_model::{Bmson, NoteEvent};
 use serde::Serialize;
 
 use crate::cli::{self, Spot};
@@ -23,20 +23,20 @@ use crate::lane_map::LaneRef;
 use crate::output::Output;
 
 /// 解析 bmson 字节（任意版本升到 v2）。
-fn parse(bytes: &[u8]) -> Result<Bmson<'_>, BmsEditError> {
+fn parse(bytes: &[u8]) -> Result<Bmson, BmsEditError> {
     let json = std::str::from_utf8(bytes)
         .map_err(|err| BmsEditError::Parse(format!("not UTF-8: {err}")))?;
-    match bmsrs::bmson::def::DetectedVersion::detect(json) {
-        Ok(bmsrs::bmson::def::DetectedVersion::V2) => {
+    match bmsrs::raw::bmson_model::DetectedVersion::detect(json) {
+        Ok(bmsrs::raw::bmson_model::DetectedVersion::V2) => {
             serde_json::from_str(json).map_err(|err| BmsEditError::Parse(err.to_string()))
         }
-        Ok(bmsrs::bmson::def::DetectedVersion::V1) => {
-            let v1: bmsrs::bmson::def::v1::Bmson<'_> =
+        Ok(bmsrs::raw::bmson_model::DetectedVersion::V1) => {
+            let v1: bmsrs::raw::bmson_model::v1::Bmson =
                 serde_json::from_str(json).map_err(|err| BmsEditError::Parse(err.to_string()))?;
             Ok(Bmson::from(v1))
         }
-        Ok(bmsrs::bmson::def::DetectedVersion::V0) => {
-            let v0: bmsrs::bmson::def::v0::Bmson<'_> =
+        Ok(bmsrs::raw::bmson_model::DetectedVersion::V0) => {
+            let v0: bmsrs::raw::bmson_model::v0::Bmson =
                 serde_json::from_str(json).map_err(|err| BmsEditError::Parse(err.to_string()))?;
             let v2 = Bmson::try_from(v0).map_err(|err| BmsEditError::Parse(err.to_string()))?;
             Ok(v2)
@@ -60,7 +60,7 @@ fn atomic_write(path: &Path, text: &str) -> Result<(), BmsEditError> {
 }
 
 /// 序列化写回并重新解析验证。
-fn write_back(file: &Path, bmson: &Bmson<'_>) -> Result<(), BmsEditError> {
+fn write_back(file: &Path, bmson: &Bmson) -> Result<(), BmsEditError> {
     let text =
         serde_json::to_string_pretty(bmson).map_err(|err| BmsEditError::Verify(err.to_string()))?;
     atomic_write(file, &text)?;
@@ -79,7 +79,7 @@ fn write_back(file: &Path, bmson: &Bmson<'_>) -> Result<(), BmsEditError> {
 fn with_bmson<T>(
     file: &Path,
     extras: &[&str],
-    f: impl for<'a> FnOnce(&mut Bmson<'a>, &[&'a str]) -> Result<T, BmsEditError>,
+    f: impl for<'a> FnOnce(&mut Bmson, &[&'a str]) -> Result<T, BmsEditError>,
 ) -> Result<T, BmsEditError> {
     let original = std::fs::read(file).map_err(|source| BmsEditError::Io {
         path: file.to_owned(),
@@ -102,7 +102,7 @@ fn with_bmson<T>(
     }
     pooled_bytes.push(b']');
     pooled_bytes.push(b']');
-    let (mut bmson, pooled): (Bmson<'_>, Vec<&str>) = serde_json::from_slice(&pooled_bytes)
+    let (mut bmson, pooled): (Bmson, Vec<&str>) = serde_json::from_slice(&pooled_bytes)
         .map_err(|err| BmsEditError::Parse(format!("pool parse: {err}")))?;
     let result = f(&mut bmson, &pooled)?;
     write_back(file, &bmson)?;
@@ -112,7 +112,7 @@ fn with_bmson<T>(
 /// 只读访问（无写回）。
 fn with_bmson_read<T>(
     file: &Path,
-    f: impl FnOnce(&Bmson<'_>) -> Result<T, BmsEditError>,
+    f: impl FnOnce(&Bmson) -> Result<T, BmsEditError>,
 ) -> Result<T, BmsEditError> {
     let bytes = std::fs::read(file).map_err(|source| BmsEditError::Io {
         path: file.to_owned(),
@@ -123,7 +123,7 @@ fn with_bmson_read<T>(
 }
 
 /// 谱面的脉冲区间序列（第 i 项 = 小节 i 的 `[start, end)`）。
-fn measure_bounds(bmson: &Bmson<'_>) -> Vec<(u64, u64)> {
+fn measure_bounds(bmson: &Bmson) -> Vec<(u64, u64)> {
     let res = bmson.chart_data.resolution;
     let default_span = res * 4;
     let Some(lines) = &bmson.chart_data.lines else {
@@ -151,7 +151,7 @@ fn measure_bounds(bmson: &Bmson<'_>) -> Vec<(u64, u64)> {
 }
 
 /// 全部事件的最大脉冲位置。
-fn max_y(bmson: &Bmson<'_>) -> u64 {
+fn max_y(bmson: &Bmson) -> u64 {
     let notes = bmson
         .chart_data
         .sound_channels
@@ -163,7 +163,7 @@ fn max_y(bmson: &Bmson<'_>) -> u64 {
 }
 
 /// 脉冲 → （小节，约分位置）。
-fn y_to_spot(bmson: &Bmson<'_>, y: u64) -> (u16, (u32, u32)) {
+fn y_to_spot(bmson: &Bmson, y: u64) -> (u16, (u32, u32)) {
     for (index, (start, end)) in measure_bounds(bmson).into_iter().enumerate() {
         if y >= start && y < end {
             let numer = u32::try_from(y - start).unwrap_or(u32::MAX);
@@ -179,7 +179,7 @@ fn y_to_spot(bmson: &Bmson<'_>, y: u64) -> (u16, (u32, u32)) {
 }
 
 /// （小节，位置）→ 脉冲。
-fn spot_to_y(bmson: &Bmson<'_>, measure: u16, pos: (u32, u32)) -> Result<u64, BmsEditError> {
+fn spot_to_y(bmson: &Bmson, measure: u16, pos: (u32, u32)) -> Result<u64, BmsEditError> {
     let bounds = measure_bounds(bmson);
     let (start, end) = bounds
         .get(usize::from(measure))
@@ -217,7 +217,10 @@ mod xmap {
     use crate::lane_map::LaneRef;
 
     /// lane → bmson `x`。
-    pub fn to_x(bmson: &bmsrs::bmson::def::Bmson<'_>, lane: LaneRef) -> Result<u64, BmsEditError> {
+    pub fn to_x(
+        bmson: &bmsrs::raw::bmson_model::Bmson,
+        lane: LaneRef,
+    ) -> Result<u64, BmsEditError> {
         let is_popn = is_popn_hint(bmson);
         let mapped = if is_popn {
             match lane {
@@ -236,7 +239,7 @@ mod xmap {
     }
 
     /// bmson `x` → lane。
-    pub fn from_x(bmson: &bmsrs::bmson::def::Bmson<'_>, x: u64) -> Option<LaneRef> {
+    pub fn from_x(bmson: &bmsrs::raw::bmson_model::Bmson, x: u64) -> Option<LaneRef> {
         if is_popn_hint(bmson) {
             LaneRef::from_bmson_popn_x(x)
         } else {
@@ -245,10 +248,10 @@ mod xmap {
     }
 
     /// 是否为 popn 系模式提示。
-    pub const fn is_popn_hint(bmson: &bmsrs::bmson::def::Bmson<'_>) -> bool {
+    pub const fn is_popn_hint(bmson: &bmsrs::raw::bmson_model::Bmson) -> bool {
         matches!(
             bmson.chart_data.mode_hint,
-            bmsrs::bmson::def::ModeHint::Popn5k | bmsrs::bmson::def::ModeHint::Popn9k
+            bmsrs::raw::bmson_model::ModeHint::Popn5k | bmsrs::raw::bmson_model::ModeHint::Popn9k
         )
     }
 
@@ -355,9 +358,9 @@ pub fn info(file: &Path, out: &mut Output) -> Result<(), BmsEditError> {
         let mode = bmson.chart_data.mode_hint.to_string();
         let chart_info = ChartInfoOut {
             format: "bmson",
-            title: bmson.song_info.title.to_owned(),
-            artist: bmson.song_info.artist.to_owned(),
-            genre: bmson.song_info.genre.to_owned(),
+            title: bmson.song_info.title.clone(),
+            artist: bmson.song_info.artist.clone(),
+            genre: bmson.song_info.genre.clone(),
             mode,
             resolution: bmson.chart_data.resolution,
             notes: playable,
@@ -400,14 +403,11 @@ pub fn info(file: &Path, out: &mut Output) -> Result<(), BmsEditError> {
 pub fn header_get(file: &Path, key: Option<&str>, out: &mut Output) -> Result<(), BmsEditError> {
     with_bmson_read(file, |bmson| {
         let pairs: Vec<(String, String)> = vec![
-            ("title".to_owned(), bmson.song_info.title.to_owned()),
-            ("artist".to_owned(), bmson.song_info.artist.to_owned()),
-            ("genre".to_owned(), bmson.song_info.genre.to_owned()),
-            ("subtitle".to_owned(), bmson.chart_info.subtitle.to_owned()),
-            (
-                "chart_name".to_owned(),
-                bmson.chart_info.chart_name.to_owned(),
-            ),
+            ("title".to_owned(), bmson.song_info.title.clone()),
+            ("artist".to_owned(), bmson.song_info.artist.clone()),
+            ("genre".to_owned(), bmson.song_info.genre.clone()),
+            ("subtitle".to_owned(), bmson.chart_info.subtitle.clone()),
+            ("chart_name".to_owned(), bmson.chart_info.chart_name.clone()),
             ("level".to_owned(), bmson.chart_info.level.to_string()),
         ];
         let filtered: Vec<_> = match key {
@@ -453,11 +453,11 @@ pub fn header_set(file: &Path, pairs: &[String], out: &mut Output) -> Result<(),
     with_bmson(file, &extras, |bmson, pool| {
         for (key, &value) in keys.iter().zip(pool) {
             match key.as_str() {
-                "title" => bmson.song_info.title = value,
-                "artist" => bmson.song_info.artist = value,
-                "genre" => bmson.song_info.genre = value,
-                "subtitle" => bmson.chart_info.subtitle = value,
-                "chart_name" => bmson.chart_info.chart_name = value,
+                "title" => value.clone_into(&mut bmson.song_info.title),
+                "artist" => value.clone_into(&mut bmson.song_info.artist),
+                "genre" => value.clone_into(&mut bmson.song_info.genre),
+                "subtitle" => value.clone_into(&mut bmson.chart_info.subtitle),
+                "chart_name" => value.clone_into(&mut bmson.chart_info.chart_name),
                 _ => {
                     return Err(BmsEditError::Usage(format!(
                         "unknown bmson header `{key}` (title|artist|genre|subtitle|chart_name)"
@@ -591,7 +591,7 @@ pub fn notes_add(
     let slot_lane = lane_of(lane)?;
     let ln_end = ln_to.map(spot_of).transpose()?.map(|spot| spot.pos);
     let extras = [def];
-    with_bmson(file, &extras, |bmson: &mut Bmson<'_>, pool: &[&str]| {
+    with_bmson(file, &extras, |bmson: &mut Bmson, pool: &[&str]| {
         let Some(def_name) = pool.first().copied() else {
             return Err(BmsEditError::Usage(
                 "internal: missing pooled def".to_owned(),
@@ -637,7 +637,7 @@ pub fn notes_add(
         match existing {
             Some(channel) => channel.note_events.push(note),
             None => bmson.chart_data.sound_channels.push(SoundChannel {
-                name: def_path,
+                name: def_path.to_path_buf(),
                 note_events: vec![note],
             }),
         }
@@ -718,7 +718,7 @@ pub fn notes_remove(
 
 /// 音符是否匹配过滤条件。
 fn note_matches(
-    bmson: &Bmson<'_>,
+    bmson: &Bmson,
     note: &NoteEvent,
     measure: u16,
     lane: LaneRef,
@@ -926,7 +926,7 @@ pub fn timing_bpm(file: &Path, bpm: f64, out: &mut Output) -> Result<(), BmsEdit
             event.bpm = bpm;
         } else {
             let mut events = std::mem::take(&mut bmson.chart_data.bpm_events);
-            events.insert(0, bmsrs::bmson::def::BpmEvent { y: 0, bpm });
+            events.insert(0, bmsrs::raw::bmson_model::BpmEvent { y: 0, bpm });
             bmson.chart_data.bpm_events = events;
         }
         Ok(())
@@ -956,7 +956,7 @@ pub fn timing_stop_add(
         bmson
             .chart_data
             .stop_events
-            .push(bmsrs::bmson::def::StopEvent {
+            .push(bmsrs::raw::bmson_model::StopEvent {
                 y,
                 duration: duration_pulse,
             });
@@ -1003,7 +1003,7 @@ pub fn defs_unsupported() -> BmsEditError {
 }
 
 /// 位移全部事件脉冲（小节结构操作的基础）。
-fn shift_events_y(bmson: &mut Bmson<'_>, from_pulse: u64, delta: i64) {
+fn shift_events_y(bmson: &mut Bmson, from_pulse: u64, delta: i64) {
     let shift = |y: &mut u64| {
         if *y >= from_pulse {
             *y = ((*y).cast_signed() + delta).max(0).cast_unsigned();
@@ -1308,7 +1308,7 @@ pub fn lint(file: &Path, out: &mut Output) -> Result<(), BmsEditError> {
         // beat 模式的 x 越界。
         if !matches!(
             bmson.chart_data.mode_hint,
-            bmsrs::bmson::def::ModeHint::Popn5k | bmsrs::bmson::def::ModeHint::Popn9k
+            bmsrs::raw::bmson_model::ModeHint::Popn5k | bmsrs::raw::bmson_model::ModeHint::Popn9k
         ) {
             for channel in &bmson.chart_data.sound_channels {
                 for note in &channel.note_events {
@@ -1354,7 +1354,7 @@ pub fn timing_scroll_add(
         let y = spot_to_y(bmson, spot.measure, spot.pos)?;
         bmson
             .scroll_events
-            .push(bmsrs::bmson::def::ScrollEvent { y, rate });
+            .push(bmsrs::raw::bmson_model::ScrollEvent { y, rate });
         bmson.scroll_events.sort_by_key(|event| event.y);
         Ok(())
     })?;
