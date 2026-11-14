@@ -93,9 +93,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7249cb5dd9157ece68259e68c14bfb898cb2925b95e548f6b31fa9d4308b2416"
+checksum = "e5021bad279ff8bb3a532e26cce9d42a01b94bee08175cca080ee0af04360481"
 dependencies = [
  "bmsrs-bms-analysis",
  "bmsrs-bms-model",
@@ -116,19 +116,20 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-analysis"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfef6f43021cb8cc36a19902a523c51cfb43c894bbb880f46b61c7c25947bf0f"
+checksum = "41c83834ef2669e95e0b450c410254e3189d8c3b5d4af6d5fc882380c75bae56"
 dependencies = [
  "bmsrs-bms-syntax",
  "bmsrs-bms-values",
+ "bmsrs-pipeline",
 ]
 
 [[package]]
 name = "bmsrs-bms-model"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d266a17c94335b0621d6f43d7ac8a37966a413101405d797c0b1003079e7c54"
+checksum = "495d39b685aa0c848da474809f68af29b52f48c799035e5ff555c3657b7990df"
 dependencies = [
  "bmsrs-bms-values",
  "bmsrs-pipeline",
@@ -137,9 +138,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-parser"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ce93f6393a8b0c629f6071a6a0f273628831bfe5195290e3f1556216417acbd"
+checksum = "c3a96be848bb6e9cdc82651426cc0ff4f6e387ab1c192b699c92b4fe48db6de4"
 dependencies = [
  "bmsrs-bms-model",
  "bmsrs-bms-source",
@@ -150,11 +151,12 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-processor"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5f47cdfffd0b6cf9000747efe8a02559dadaeb419563680eadc7ee16ff6ff0f"
+checksum = "e7de9152264a780d6cc2eca1dad333fc11b44ad5a0c600fafbeded1ca2b4daaa"
 dependencies = [
  "bmsrs-bms-model",
+ "bmsrs-bms-values",
  "bmsrs-chart",
  "bmsrs-pipeline",
  "thiserror",
@@ -162,9 +164,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-source"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6350d2a0c95bdba7dc2030b80a4f30c394d0601edf5f9b2b1bdb397109c0212"
+checksum = "bfc5ea1e3700cfabef9b361cdd4fac1190b126a11cfda58ea47c3b7f1d889566"
 dependencies = [
  "encoding_rs",
  "thiserror",
@@ -172,9 +174,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-syntax"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c943044c6c0546f1804896558dd35e074b72544026d8c83e9334ed056d15bd45"
+checksum = "26f2c04707fec5ca5a8965254b2c2eda078356ce00982384d0279d76d3b8dfb4"
 dependencies = [
  "bmsrs-bms-source",
  "rowan",
@@ -183,9 +185,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-values"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "829b9e10f667e78ea3b2627fa8340b15db9a4b8ee7958516bb082d0a8296ee88"
+checksum = "83ae7f85997d5b8f6841cc6070d32715d5fdb3707e692eb8a6f25044f7b16c6a"
 dependencies = [
  "bmsrs-bms-values-derive",
  "bmsrs-pipeline",
@@ -195,9 +197,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-values-derive"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "207c56f0dc16944d3b5aa64cffb49c7b56e64c87f76fd9f039a38e72fdda2924"
+checksum = "f57d52bf51083727c432bc2acd94e10450db6536c9214cc722df11ddf9fed858"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -206,18 +208,19 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bms-writer"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53d812ede4307ee1122b2886a2901e13a432e7cfb913b35bbc201149d57c8ccf"
+checksum = "a2eb4899f7f3b1a6305075d8b03cc0a6d313c87bfe3bae47b9638c764ba148d1"
 dependencies = [
  "bmsrs-bms-model",
+ "bmsrs-bms-values",
 ]
 
 [[package]]
 name = "bmsrs-bmson-model"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6304d46136b12866d4980bf3d4a0f555e38f234ac0c4d16fc5b39c5e7e27b664"
+checksum = "c87cb54cffaf97c67fd0aee5e4b77e04585471a6ef170682545e226fa54040c0"
 dependencies = [
  "derive_more",
  "serde",
@@ -227,9 +230,9 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-bmson-processor"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dde93e53529deaf16a766b11374e8e3d846d89a313ba7e38841f25aef50ee7c"
+checksum = "1c409585995ed0451051289677e2ed8cdbdda6f15993242419c5e45b66a04370"
 dependencies = [
  "bmsrs-bmson-model",
  "bmsrs-chart",
@@ -239,21 +242,21 @@ dependencies = [
 
 [[package]]
 name = "bmsrs-chart"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "584a6f8bbfcd8afb30d228043af0c61db833b196da30f6e86208c26fd73224e0"
+checksum = "909fc232b1fcde142aa7513a88466c68e8fe762abb4aa075c5ac7aae70cc6229"
 
 [[package]]
 name = "bmsrs-pipeline"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f804cb55d2eeca57fa51c62852fc1f109eb6eeb2384207cdaec00e4ead8238"
+checksum = "25e636361a0f570307413d2dd9d4f1ad11976e4218931c884ba9abc7a9112598"
 
 [[package]]
 name = "bmsrs-player"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5251aa94b5083c5ba60737ba298afb35da036e6a73158f62a345f76b4ebf774"
+checksum = "03c9b40c00e414a338e92e4825a0974ac1c9237e709d3bc43b0bfe91622e66e3"
 dependencies = [
  "bmsrs-chart",
 ]
