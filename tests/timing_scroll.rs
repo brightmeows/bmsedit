@@ -10,7 +10,6 @@ const fn silent() -> Output {
 }
 
 /// 写临时谱面文件。
-#[expect(clippy::expect_used, reason = "test helper panics on invalid input")]
 fn temp_chart(name: &str, content: &str) -> std::path::PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("bmsedit-scroll-{name}-{}", std::process::id()));
